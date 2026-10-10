@@ -1,0 +1,35 @@
+definitions:
+  handler.PaymentRequest:
+    properties:
+      amount:
+        example: 1000
+        type: integer
+      userId:
+        example: 123e4567-e89b-12d3-a456-426614174000
+        type: string
+    required:
+    - amount
+    - userId
+    type: object
+info:
+  contact: {}
+paths:
+  /payment:
+    post:
+      consumes:
+      - application/json
+      description: Регистрирует платёж и отправляет его на обработку
+      parameters:
+      - description: Данные платежа
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/handler.PaymentRequest'
+      produces:
+      - application/json
+      responses: {}
+      summary: Совершить платёж
+      tags:
+      - Payment
+swagger: "2.0"
