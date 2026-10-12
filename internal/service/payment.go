@@ -1,10 +1,13 @@
 package service
 
-import "context"
+import (
+	"context"
+	"log/slog"
+)
 
 type PaymentService struct{}
 
-func NewPaymentService() *PaymentService {
+func NewPaymentService(log *slog.Logger) *PaymentService {
 	return &PaymentService{}
 }
 

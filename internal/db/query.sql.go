@@ -46,3 +46,19 @@ func (q *Queries) GetPayment(ctx context.Context, id uuid.UUID) (Payment, error)
 	)
 	return i, err
 }
+
+const updatePaymentStatus = `-- name: UpdatePaymentStatus :exec
+UPDATE payments
+SET status = $2
+WHERE id = $1
+`
+
+type UpdatePaymentStatusParams struct {
+	ID     uuid.UUID
+	Status PaymentStatus
+}
+
+func (q *Queries) UpdatePaymentStatus(ctx context.Context, arg UpdatePaymentStatusParams) error {
+	_, err := q.db.Exec(ctx, updatePaymentStatus, arg.ID, arg.Status)
+	return err
+}

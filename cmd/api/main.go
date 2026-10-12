@@ -7,9 +7,6 @@ import (
 	"log/slog"
 	"os"
 
-	_ "github.com/golang-migrate/migrate/v4/database/postgres"
-	_ "github.com/golang-migrate/migrate/v4/source/file"
-
 	"github.com/commando-team/smart-path/internal/config"
 	"github.com/commando-team/smart-path/internal/http/handler"
 	"github.com/commando-team/smart-path/internal/logger"
@@ -19,6 +16,9 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	_ "github.com/commando-team/smart-path/docs"
+	_ "github.com/golang-migrate/migrate/v4/database/postgres"
+	_ "github.com/golang-migrate/migrate/v4/source/file"
+
 	swaggerFiles "github.com/swaggo/files"
 	ginSwagger "github.com/swaggo/gin-swagger"
 )
@@ -63,9 +63,13 @@ func main() {
 	}
 	defer pool.Close()
 
-	paymentService := service.NewPaymentService()
+	// paymentRepo := repository.NewPaymentRepository(pool)
+
+	paymentService := service.NewPaymentService(log)
 
 	apiHandler := handler.NewApiHandler(log, paymentService)
+
+	// orchestrator := orchestrator.New(log, paymentRepo, router.DefaultChannels)
 
 	r := gin.Default()
 

@@ -8,5 +8,5 @@ type Channel struct {
 	IsActive       bool
 	FeePercent     int64
 	SuccessPercent int64
-	Latency        int64
+	LatencyMs      int64
 }

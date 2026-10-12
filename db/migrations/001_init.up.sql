@@ -1,4 +1,4 @@
-CREATE TYPE payment_status AS ENUM ('pending', 'success', 'failure');
+CREATE TYPE payment_status AS ENUM ('pending', 'success', 'failure', 'routing', 'processing', 'indeterminate');
 
 CREATE TABLE IF NOT EXISTS payments (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
