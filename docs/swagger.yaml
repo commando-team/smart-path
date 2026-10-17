@@ -1,4 +1,26 @@
 definitions:
+  db.Payment:
+    properties:
+      amount:
+        format: int64
+        type: integer
+      id:
+        type: string
+      status:
+        $ref: '#/definitions/db.PaymentStatus'
+      userID:
+        type: string
+    type: object
+  db.PaymentStatus:
+    enum:
+    - pending
+    - success
+    - failure
+    type: string
+    x-enum-varnames:
+    - PaymentStatusPending
+    - PaymentStatusSuccess
+    - PaymentStatusFailure
   handler.PaymentRequest:
     properties:
       amount:
@@ -30,6 +52,24 @@ paths:
       - application/json
       responses: {}
       summary: Совершить платёж
+      tags:
+      - Payment
+  /payment/{id}:
+    get:
+      parameters:
+      - description: Идентификатор платежа (UUID)
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/db.Payment'
+      summary: Получить данные о платёже
       tags:
       - Payment
 swagger: "2.0"

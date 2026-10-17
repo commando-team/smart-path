@@ -25,3 +25,18 @@ func (r *PaymentRepository) UpdateStatus(ctx context.Context, paymentID uuid.UUI
 		Status: paymentStatus,
 	})
 }
+
+func (r *PaymentRepository) CreatePayment(ctx context.Context, userID uuid.UUID, amount int64, status string) (uuid.UUID, error) {
+	var paymentStatus db.PaymentStatus
+	paymentStatus.Scan(status)
+
+	return r.queries.CreatePayment(ctx, db.CreatePaymentParams{
+		UserID: userID,
+		Amount: amount,
+		Status: paymentStatus,
+	})
+}
+
+func (r *PaymentRepository) GetPayment(ctx context.Context, paymentID uuid.UUID) (db.Payment, error) {
+	return r.queries.GetPayment(ctx, paymentID)
+}

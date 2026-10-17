@@ -30,9 +30,68 @@
                 ],
                 "responses": {}
             }
+        },
+        "/payment/{id}": {
+            "get": {
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Payment"
+                ],
+                "summary": "Получить данные о платёже",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Идентификатор платежа (UUID)",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/db.Payment"
+                        }
+                    }
+                }
+            }
         }
     },
     "definitions": {
+        "db.Payment": {
+            "type": "object",
+            "properties": {
+                "amount": {
+                    "type": "integer",
+                    "format": "int64"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "status": {
+                    "$ref": "#/definitions/db.PaymentStatus"
+                },
+                "userID": {
+                    "type": "string"
+                }
+            }
+        },
+        "db.PaymentStatus": {
+            "type": "string",
+            "enum": [
+                "pending",
+                "success",
+                "failure"
+            ],
+            "x-enum-varnames": [
+                "PaymentStatusPending",
+                "PaymentStatusSuccess",
+                "PaymentStatusFailure"
+            ]
+        },
         "handler.PaymentRequest": {
             "type": "object",
             "required": [
