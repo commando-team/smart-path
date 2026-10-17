@@ -1,6 +1,7 @@
 package logger
 
 import (
+	"io"
 	"log/slog"
 	"os"
 
@@ -18,4 +19,8 @@ func New(cfg *config.Config) *slog.Logger {
 	}
 
 	return log
+}
+
+func NewDiscardLogger() *slog.Logger {
+	return slog.New(slog.NewTextHandler(io.Discard, nil))
 }

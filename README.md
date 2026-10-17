@@ -39,3 +39,9 @@ swag init -o ./docs -g ./cmd/api/main.go --parseInternal
 ```bash
 sqlc generate
 ```
+
+## Генерация моков
+
+```bash
+mockery
+```
