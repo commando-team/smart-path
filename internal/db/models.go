@@ -14,9 +14,12 @@ import (
 type PaymentStatus string
 
 const (
-	PaymentStatusPending PaymentStatus = "pending"
-	PaymentStatusSuccess PaymentStatus = "success"
-	PaymentStatusFailure PaymentStatus = "failure"
+	PaymentStatusPending       PaymentStatus = "pending"
+	PaymentStatusSuccess       PaymentStatus = "success"
+	PaymentStatusFailure       PaymentStatus = "failure"
+	PaymentStatusRouting       PaymentStatus = "routing"
+	PaymentStatusProcessing    PaymentStatus = "processing"
+	PaymentStatusIndeterminate PaymentStatus = "indeterminate"
 )
 
 func (e *PaymentStatus) Scan(src interface{}) error {
