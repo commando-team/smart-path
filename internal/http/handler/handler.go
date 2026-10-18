@@ -9,7 +9,7 @@ import (
 )
 
 type PaymentService interface {
-	Pay(ctx context.Context, userID uuid.UUID, amount int64) error
+	Pay(ctx context.Context, userID uuid.UUID, amount int64) (uuid.UUID, error)
 	GetPayment(ctx context.Context, paymentID uuid.UUID) (*db.Payment, error)
 }
 

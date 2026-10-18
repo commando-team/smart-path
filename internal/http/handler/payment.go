@@ -13,6 +13,11 @@ type PaymentRequest struct {
 	Amount int64     `json:"amount" binding:"required,gt=0" example:"1000"`
 }
 
+type PaymentResponse struct {
+	PaymentID uuid.UUID `json:"paymentId"`
+	Status    string    `json:"status"`
+}
+
 // Pay godoc
 // @Summary      Совершить платёж
 // @Description  Регистрирует платёж и отправляет его на обработку
@@ -28,16 +33,17 @@ func (h *ApiHandler) Pay(c *gin.Context) {
 		return
 	}
 
-	err := h.payment.Pay(c.Request.Context(), req.UserId, req.Amount)
-
+	paymentID, err := h.payment.Pay(c.Request.Context(), req.UserId, req.Amount)
 	if err != nil {
 		h.log.Error("payment handler error", logger.Err(err))
-
 		c.Status(http.StatusInternalServerError)
 		return
 	}
 
-	c.Status(http.StatusCreated)
+	c.JSON(http.StatusAccepted, PaymentResponse{
+		PaymentID: paymentID,
+		Status:    "PENDING",
+	})
 }
 
 // GetPayment godoc

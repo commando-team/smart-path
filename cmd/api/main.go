@@ -5,10 +5,15 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"os"
+	"os/signal"
+	"syscall"
+	"time"
 
 	"github.com/commando-team/smart-path/internal/config"
 	"github.com/commando-team/smart-path/internal/http/handler"
+	"github.com/commando-team/smart-path/internal/kafka"
 	"github.com/commando-team/smart-path/internal/logger"
 	"github.com/commando-team/smart-path/internal/orchestrator"
 	"github.com/commando-team/smart-path/internal/repository"
@@ -38,21 +43,18 @@ func main() {
 
 	log := logger.New(cfg)
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
 
-	// строка подключения к бд
 	dsn := fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=disable",
 		cfg.DBUser, cfg.DBPassword, cfg.DBHost, cfg.DBPort, cfg.DBName,
 	)
 
-	// накатываем миграции
 	if err := runMigrations(dsn, log); err != nil {
 		log.Error("fatal error during migrations", logger.Err(err))
 		os.Exit(1)
 	}
 
-	// пул соединений к бд
 	pool, err := pgxpool.New(ctx, dsn)
 	if err != nil {
 		log.Error("db connection error", logger.Err(err))
@@ -60,23 +62,51 @@ func main() {
 	}
 	defer pool.Close()
 
+	kafkaBrokers := []string{"localhost:9092"}
+	kafkaTopic := "payment.process"
+	consumerGroup := "payment-orchestrator-group"
+
+	producer := kafka.NewProducer(kafkaBrokers, kafkaTopic)
+	defer producer.Close()
+
 	paymentRepo := repository.NewPaymentRepository(pool)
+	orch := orchestrator.New(log, paymentRepo, router.DefaultChannels)
 
-	orchestrator := orchestrator.New(log, paymentRepo, router.DefaultChannels)
+	consumer := kafka.NewConsumer(kafkaBrokers, kafkaTopic, consumerGroup, log, paymentRepo, orch)
+	defer consumer.Close()
 
-	paymentService := service.NewPaymentService(log, paymentRepo, orchestrator)
+	go func() {
+		if err := consumer.Start(ctx); err != nil && !errors.Is(err, context.Canceled) {
+			log.Error("consumer stopped with error", logger.Err(err))
+		}
+	}()
 
+	paymentService := service.NewPaymentService(log, paymentRepo, producer)
 	apiHandler := handler.NewApiHandler(log, paymentService)
 
 	r := gin.Default()
-
 	r.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
-
 	r.POST("/payment", apiHandler.Pay)
 	r.GET("/payment/:id", apiHandler.GetPayment)
 
-	if err := r.Run(fmt.Sprintf(":%s", cfg.Port)); err != nil {
-		log.Error("failed running the server", logger.Err(err))
+	srv := &http.Server{
+		Addr:    fmt.Sprintf(":%s", cfg.Port),
+		Handler: r,
+	}
+
+	go func() {
+		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			log.Error("failed running the server", logger.Err(err))
+		}
+	}()
+
+	<-ctx.Done()
+
+	shutdownCtx, cancelShutdown := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancelShutdown()
+
+	if err := srv.Shutdown(shutdownCtx); err != nil {
+		log.Error("server forced to shutdown", logger.Err(err))
 	}
 }
 
