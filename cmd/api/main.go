@@ -47,16 +47,10 @@ func main() {
 	)
 
 	// накатываем миграции
-	m, err := migrate.New("file://db/migrations", dsn)
-	if err != nil {
-		log.Error("failed to initialize migration", logger.Err(err))
+	if err := runMigrations(dsn, log); err != nil {
+		log.Error("fatal error during migrations", logger.Err(err))
 		os.Exit(1)
 	}
-	if err := m.Up(); err != nil && !errors.Is(err, migrate.ErrNoChange) {
-		log.Error("migration error", logger.Err(err))
-		os.Exit(1)
-	}
-	m.Close()
 
 	// пул соединений к бд
 	pool, err := pgxpool.New(ctx, dsn)
@@ -82,6 +76,25 @@ func main() {
 	r.GET("/payment/:id", apiHandler.GetPayment)
 
 	if err := r.Run(fmt.Sprintf(":%s", cfg.Port)); err != nil {
-		log.Error("failed running the server", slog.Any("err", err))
+		log.Error("failed running the server", logger.Err(err))
 	}
+}
+
+func runMigrations(dsn string, log *slog.Logger) error {
+	m, err := migrate.New("file://db/migrations", dsn)
+	if err != nil {
+		return fmt.Errorf("failed to initialize migration: %w", err)
+	}
+
+	defer func() {
+		if srcErr, dbErr := m.Close(); srcErr != nil || dbErr != nil {
+			log.Error("failed to close migration resources", "src_err", srcErr, "db_err", dbErr)
+		}
+	}()
+
+	if err := m.Up(); err != nil && !errors.Is(err, migrate.ErrNoChange) {
+		return fmt.Errorf("migration error: %w", err)
+	}
+
+	return nil
 }

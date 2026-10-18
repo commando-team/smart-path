@@ -27,7 +27,10 @@ type Config struct {
 func MustLoad() *Config {
 	var cfg Config
 
-	godotenv.Load()
+	err := godotenv.Load()
+	if err != nil {
+		log.Fatalf("failed to load env: %s", err)
+	}
 
 	if err := cleanenv.ReadEnv(&cfg); err != nil {
 		log.Fatalf("failed to load config: %s", err)

@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/commando-team/smart-path/internal/db"
 	"github.com/google/uuid"
@@ -18,7 +19,9 @@ func NewPaymentRepository(pool *pgxpool.Pool) *PaymentRepository {
 
 func (r *PaymentRepository) UpdateStatus(ctx context.Context, paymentID uuid.UUID, status string) error {
 	var paymentStatus db.PaymentStatus
-	paymentStatus.Scan(status)
+	if err := paymentStatus.Scan(status); err != nil {
+		return fmt.Errorf("failed to scan status: %w", err)
+	}
 
 	return r.queries.UpdatePaymentStatus(ctx, db.UpdatePaymentStatusParams{
 		ID:     paymentID,
@@ -28,7 +31,9 @@ func (r *PaymentRepository) UpdateStatus(ctx context.Context, paymentID uuid.UUI
 
 func (r *PaymentRepository) CreatePayment(ctx context.Context, userID uuid.UUID, amount int64, status string) (uuid.UUID, error) {
 	var paymentStatus db.PaymentStatus
-	paymentStatus.Scan(status)
+	if err := paymentStatus.Scan(status); err != nil {
+		return uuid.Nil, fmt.Errorf("failed to scan status: %w", err)
+	}
 
 	return r.queries.CreatePayment(ctx, db.CreatePaymentParams{
 		UserID: userID,
