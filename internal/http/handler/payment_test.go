@@ -61,7 +61,7 @@ func TestPayAPI_Success(t *testing.T) {
 	rec := httptest.NewRecorder()
 	router.ServeHTTP(rec, req)
 
-	assert.Equal(t, http.StatusAccepted, rec.Code)
+	assert.Equal(t, http.StatusCreated, rec.Code)
 	assert.Contains(t, rec.Body.String(), expectedPaymentID.String())
 	assert.Contains(t, rec.Body.String(), `"status":"PENDING"`)
 }
