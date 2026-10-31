@@ -62,18 +62,26 @@ func main() {
 	}
 	defer pool.Close()
 
-	kafkaBrokers := []string{"localhost:9092"}
+	kafkaBrokers := []string{cfg.KafkaBroker}
 	kafkaTopic := "payment.process"
 	consumerGroup := "payment-orchestrator-group"
 
 	producer := kafka.NewProducer(kafkaBrokers, kafkaTopic)
-	defer producer.Close()
+	defer func() {
+		if err := producer.Close(); err != nil {
+			log.Error("failed to close kafka producer", logger.Err(err))
+		}
+	}()
 
 	paymentRepo := repository.NewPaymentRepository(pool)
 	orch := orchestrator.New(log, paymentRepo, router.DefaultChannels)
 
 	consumer := kafka.NewConsumer(kafkaBrokers, kafkaTopic, consumerGroup, log, paymentRepo, orch)
-	defer consumer.Close()
+	defer func() {
+		if err := consumer.Close(); err != nil {
+			log.Error("failed to close kafka consumer", logger.Err(err))
+		}
+	}()
 
 	go func() {
 		if err := consumer.Start(ctx); err != nil && !errors.Is(err, context.Canceled) {

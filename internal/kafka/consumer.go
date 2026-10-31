@@ -35,12 +35,11 @@ func NewConsumer(
 	orch *orchestrator.Orchestrator,
 ) *Consumer {
 	reader := kafka.NewReader(kafka.ReaderConfig{
-		Brokers:        brokers,
-		GroupID:        groupID,
-		Topic:          topic,
-		MinBytes:       10e3,
-		MaxBytes:       10e6,
-		CommitInterval: 0,
+		Brokers:  brokers,
+		GroupID:  groupID,
+		Topic:    topic,
+		MinBytes: 10e3,
+		MaxBytes: 10e6,
 	})
 
 	return &Consumer{
@@ -52,6 +51,8 @@ func NewConsumer(
 }
 
 func (c *Consumer) Start(ctx context.Context) error {
+	c.log.Info("kafka consumer started!")
+
 	for {
 		msg, err := c.reader.FetchMessage(ctx)
 		if err != nil {
@@ -75,6 +76,8 @@ func (c *Consumer) Start(ctx context.Context) error {
 }
 
 func (c *Consumer) process(ctx context.Context, msg kafka.Message) error {
+	c.log.Info("processing message", slog.Any("msg", msg))
+
 	var task PaymentMessage
 	if err := json.Unmarshal(msg.Value, &task); err != nil {
 		return fmt.Errorf("failed to unmarshal payload: %w", err)

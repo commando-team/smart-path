@@ -22,6 +22,8 @@ type Config struct {
 	DBName     string `env:"DB_NAME" env-required:"true"`
 
 	Port string `env:"SERVER_PORT" env-default:"8080"`
+
+	KafkaBroker string `env:"KAFKA_BROKER" env-default:"kafka:29092"`
 }
 
 func MustLoad() *Config {
@@ -29,7 +31,7 @@ func MustLoad() *Config {
 
 	err := godotenv.Load()
 	if err != nil {
-		log.Fatalf("failed to load env: %s", err)
+		log.Printf("failed to load env files: %s", err)
 	}
 
 	if err := cleanenv.ReadEnv(&cfg); err != nil {

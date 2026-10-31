@@ -40,7 +40,7 @@ func (h *ApiHandler) Pay(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusAccepted, PaymentResponse{
+	c.JSON(http.StatusCreated, PaymentResponse{
 		PaymentID: paymentID,
 		Status:    "PENDING",
 	})
