@@ -88,6 +88,22 @@ jobs:
           echo 'Kafka did not become ready'
           exit 1
 
+      - name: Create and prepare payment topic
+        run: |
+          docker compose exec -T kafka /opt/kafka/bin/kafka-topics.sh \
+            --bootstrap-server localhost:29092 --create --if-not-exists \
+            --topic payment.process --partitions 3 --replication-factor 1
+          for attempt in {1..30}; do
+            if docker compose exec -T kafka /opt/kafka/bin/kafka-topics.sh \
+              --bootstrap-server localhost:29092 --describe --topic payment.process |
+              awk '/Partition:/{if ($0 ~ /Leader: -1/) exit 1; count++} END {if (count != 3) exit 1}'; then
+              exit 0
+            fi
+            sleep 2
+          done
+          echo 'Payment topic partitions did not become ready'
+          exit 1
+
       - name: Build and start API
         run: docker compose up -d --no-deps --build smart-path
 
