@@ -35,11 +35,12 @@ func NewConsumer(
 	orch *orchestrator.Orchestrator,
 ) *Consumer {
 	reader := kafka.NewReader(kafka.ReaderConfig{
-		Brokers:  brokers,
-		GroupID:  groupID,
-		Topic:    topic,
-		MinBytes: 10e3,
-		MaxBytes: 10e6,
+		Brokers:               brokers,
+		GroupID:               groupID,
+		Topic:                 topic,
+		MinBytes:              10e3,
+		MaxBytes:              10e6,
+		WatchPartitionChanges: true,
 	})
 
 	return &Consumer{

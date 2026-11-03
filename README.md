@@ -4,8 +4,6 @@
 
 ```bash
 docker compose -f 'compose.dev.yaml' up -d --build
-
-go run ./cmd/api
 ```
 
 ## Swagger
@@ -31,7 +29,7 @@ go install github.com/vektra/mockery/v3@v3.8.0
 ## Генерация документации API
 
 ```bash
-swag init -o ./docs -g ./cmd/api/main.go --parseInternal
+swag init -o ./docs -g ./cmd/main.go --parseInternal
 ```
 
 ## Генерация кода для работы с БД

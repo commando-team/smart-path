@@ -16,11 +16,17 @@ definitions:
     - pending
     - success
     - failure
+    - routing
+    - processing
+    - indeterminate
     type: string
     x-enum-varnames:
     - PaymentStatusPending
     - PaymentStatusSuccess
     - PaymentStatusFailure
+    - PaymentStatusRouting
+    - PaymentStatusProcessing
+    - PaymentStatusIndeterminate
   handler.PaymentRequest:
     properties:
       amount:

@@ -95,12 +95,18 @@ const docTemplate = `{
             "enum": [
                 "pending",
                 "success",
-                "failure"
+                "failure",
+                "routing",
+                "processing",
+                "indeterminate"
             ],
             "x-enum-varnames": [
                 "PaymentStatusPending",
                 "PaymentStatusSuccess",
-                "PaymentStatusFailure"
+                "PaymentStatusFailure",
+                "PaymentStatusRouting",
+                "PaymentStatusProcessing",
+                "PaymentStatusIndeterminate"
             ]
         },
         "handler.PaymentRequest": {

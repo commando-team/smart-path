@@ -26,3 +26,7 @@ packages:
     config:
       all: true
       recursive: true
+  github.com/commando-team/smart-path/internal/orchestrator/:
+    config:
+      all: true
+      recursive: true
