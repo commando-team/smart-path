@@ -54,3 +54,77 @@ jobs:
 
       - name: Build
         run: go build -v ./...
+
+  smoke:
+    name: Smoke Test
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      DB_USER: postgres
+      DB_PASSWORD: password
+      DB_HOST: db
+      DB_PORT: '5432'
+      DB_NAME: backend
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.26.3'
+
+      - name: Start PostgreSQL and Kafka
+        run: docker compose up -d --wait --wait-timeout 120 db kafka
+
+      - name: Wait for Kafka
+        run: |
+          for attempt in {1..60}; do
+            if docker compose exec -T kafka /opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:29092 >/dev/null 2>&1; then
+              exit 0
+            fi
+            sleep 2
+          done
+          echo 'Kafka did not become ready'
+          exit 1
+
+      - name: Create and prepare payment topic
+        run: |
+          docker compose exec -T kafka /opt/kafka/bin/kafka-topics.sh \
+            --bootstrap-server localhost:29092 --create --if-not-exists \
+            --topic payment.process --partitions 3 --replication-factor 1
+          for attempt in {1..30}; do
+            if docker compose exec -T kafka /opt/kafka/bin/kafka-topics.sh \
+              --bootstrap-server localhost:29092 --describe --topic payment.process |
+              awk '/Partition:/{if ($0 ~ /Leader: -1/) exit 1; count++} END {if (count != 3) exit 1}'; then
+              exit 0
+            fi
+            sleep 2
+          done
+          echo 'Payment topic partitions did not become ready'
+          exit 1
+
+      - name: Build and start API
+        run: docker compose up -d --no-deps --build smart-path
+
+      - name: Wait for API
+        run: |
+          for attempt in {1..60}; do
+            if curl --fail --silent --max-time 2 http://localhost:8080/swagger/index.html >/dev/null; then
+              exit 0
+            fi
+            sleep 2
+          done
+          echo 'API did not become ready'
+          exit 1
+
+      - name: Test payment creation and retrieval
+        run: go test -tags=smoke -count=1 -v ./tests/smoke -run '^TestPaymentCreation$'
+
+      - name: Show container logs on failure
+        if: failure()
+        run: docker compose logs --no-color --tail=200
+
+      - name: Stop containers
+        if: always()
+        run: docker compose down -v --remove-orphans
