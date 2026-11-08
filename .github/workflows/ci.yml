@@ -118,8 +118,8 @@ jobs:
           echo 'API did not become ready'
           exit 1
 
-      - name: Test payment creation and retrieval
-        run: go test -tags=smoke -count=1 -v ./tests/smoke -run '^TestPaymentCreation$'
+      - name: Run smoke tests
+        run: go test -tags=smoke -count=1 -v ./tests/smoke -run '^TestPayment(Creation|Processing)$'
 
       - name: Show container logs on failure
         if: failure()
