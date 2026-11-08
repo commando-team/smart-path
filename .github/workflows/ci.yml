@@ -65,6 +65,7 @@ jobs:
       DB_HOST: db
       DB_PORT: '5432'
       DB_NAME: backend
+      KAFKA_BROKER: kafka:29092
     steps:
       - name: Check out code
         uses: actions/checkout@v4
