@@ -27,6 +27,47 @@ definitions:
     - PaymentStatusRouting
     - PaymentStatusProcessing
     - PaymentStatusIndeterminate
+  domain.Channel:
+    properties:
+      consecutiveFailures:
+        type: integer
+      failedRequests:
+        type: integer
+      feePercent:
+        type: integer
+      id:
+        type: string
+      isActive:
+        type: boolean
+      latencyMs:
+        type: integer
+      name:
+        type: string
+      successPercent:
+        type: integer
+      totalRequests:
+        type: integer
+    type: object
+  handler.CreateChannelRequest:
+    properties:
+      feePercent:
+        minimum: 0
+        type: integer
+      isActive:
+        type: boolean
+      latencyMs:
+        minimum: 0
+        type: integer
+      name:
+        type: string
+      successPercent:
+        maximum: 100
+        minimum: 0
+        type: integer
+    required:
+    - isActive
+    - name
+    type: object
   handler.PaymentRequest:
     properties:
       amount:
@@ -39,9 +80,110 @@ definitions:
     - amount
     - userId
     type: object
+  handler.UpdateChannelRequest:
+    properties:
+      feePercent:
+        minimum: 0
+        type: integer
+      isActive:
+        type: boolean
+      latencyMs:
+        minimum: 0
+        type: integer
+      name:
+        type: string
+      successPercent:
+        maximum: 100
+        minimum: 0
+        type: integer
+    required:
+    - isActive
+    - name
+    type: object
 info:
   contact: {}
 paths:
+  /channels:
+    get:
+      description: Возвращает все каналы и их текущие метрики
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/domain.Channel'
+            type: array
+      summary: Список платёжных каналов
+      tags:
+      - Channel
+    post:
+      consumes:
+      - application/json
+      description: Добавляет новый платёжный канал в систему
+      parameters:
+      - description: Данные нового канала
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/handler.CreateChannelRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/domain.Channel'
+      summary: Создать платёжный канал
+      tags:
+      - Channel
+  /channels/{id}:
+    get:
+      description: Возвращает информацию о канале по идентификатору
+      parameters:
+      - description: Идентификатор канала (UUID)
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/domain.Channel'
+      summary: Получить платёжный канал
+      tags:
+      - Channel
+    put:
+      consumes:
+      - application/json
+      description: Обновляет параметры существующего канала
+      parameters:
+      - description: Идентификатор канала (UUID)
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Новые данные канала
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/handler.UpdateChannelRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/domain.Channel'
+      summary: Обновить платёжный канал
+      tags:
+      - Channel
   /payment:
     post:
       consumes:

@@ -3,7 +3,7 @@
 ## Запуск
 
 ```bash
-docker compose -f 'compose.dev.yaml' up -d --build
+docker compose -f 'compose.yaml' up -d --build
 ```
 
 ## Swagger

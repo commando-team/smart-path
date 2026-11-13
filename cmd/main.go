@@ -17,7 +17,6 @@ import (
 	"github.com/commando-team/smart-path/internal/logger"
 	"github.com/commando-team/smart-path/internal/orchestrator"
 	"github.com/commando-team/smart-path/internal/repository"
-	"github.com/commando-team/smart-path/internal/router"
 	"github.com/commando-team/smart-path/internal/service"
 	"github.com/gin-gonic/gin"
 	"github.com/golang-migrate/migrate/v4"
@@ -74,7 +73,8 @@ func main() {
 	}()
 
 	paymentRepo := repository.NewPaymentRepository(pool)
-	orch := orchestrator.New(log, paymentRepo, router.DefaultChannels)
+	channelRepo := repository.NewChannelRepository(pool)
+	orch := orchestrator.New(log, paymentRepo, channelRepo)
 
 	consumer := kafka.NewConsumer(kafkaBrokers, kafkaTopic, consumerGroup, log, paymentRepo, orch)
 	defer func() {

@@ -27,43 +27,51 @@ type PaymentRepository interface {
 	UpdateStatus(ctx context.Context, paymentID uuid.UUID, status string) error
 }
 
-type Orchestrator struct {
-	log      *slog.Logger
-	repo     PaymentRepository
-	channels []*domain.Channel
+type ChannelRepository interface {
+	GetActiveChannels(ctx context.Context) ([]*domain.Channel, error)
+	RecordAttempt(ctx context.Context, channelID uuid.UUID, success bool, latencyMs int64) error
 }
 
-func New(log *slog.Logger, repo PaymentRepository, channels []*domain.Channel) *Orchestrator {
+type Orchestrator struct {
+	log         *slog.Logger
+	paymentRepo PaymentRepository
+	channelRepo ChannelRepository
+}
+
+func New(log *slog.Logger, paymentRepo PaymentRepository, channelRepo ChannelRepository) *Orchestrator {
 	return &Orchestrator{
-		log:      log,
-		repo:     repo,
-		channels: channels,
+		log:         log,
+		paymentRepo: paymentRepo,
+		channelRepo: channelRepo,
 	}
 }
 
 func (o *Orchestrator) ProcessPayment(ctx context.Context, payment *db.Payment) error {
 	o.log.Info("starting payment processing", slog.String("payment_id", payment.ID.String()))
 
+	channels, err := o.channelRepo.GetActiveChannels(ctx)
+	if err != nil {
+		o.log.Error("failed to load channels", logger.Err(err))
+		return o.paymentRepo.UpdateStatus(ctx, payment.ID, StatusFailure)
+	}
+
 	triedChannels := make(map[string]bool)
 
 	for {
-		// статус -> routing
-		if err := o.repo.UpdateStatus(ctx, payment.ID, StatusRouting); err != nil {
+		if err := o.paymentRepo.UpdateStatus(ctx, payment.ID, StatusRouting); err != nil {
 			return fmt.Errorf("failed to update status to ROUTING: %w", err)
 		}
 
-		// выбираем лучший канал среди еще не опробованных
-		selectedChannel := o.selectBestUntriedChannel(triedChannels)
+		selectedChannel := o.selectBestUntriedChannel(channels, triedChannels)
 
 		if selectedChannel == nil {
 			o.log.Warn("no available channels left for payment", slog.String("payment_id", payment.ID.String()))
-			return o.repo.UpdateStatus(ctx, payment.ID, StatusFailure)
+			return o.paymentRepo.UpdateStatus(ctx, payment.ID, StatusFailure)
 		}
 
 		triedChannels[selectedChannel.Id.String()] = true
 
-		// статус -> processing
-		if err := o.repo.UpdateStatus(ctx, payment.ID, StatusProcessing); err != nil {
+		if err := o.paymentRepo.UpdateStatus(ctx, payment.ID, StatusProcessing); err != nil {
 			return err
 		}
 
@@ -74,46 +82,42 @@ func (o *Orchestrator) ProcessPayment(ctx context.Context, payment *db.Payment) 
 		logWithParams := o.log.With(
 			slog.String("payment_id", payment.ID.String()),
 			slog.String("channel", selectedChannel.Name),
-			slog.Int64("latency ms", latency.Milliseconds()),
+			slog.Int64("latency_ms", latency.Milliseconds()),
 		)
 
 		switch result {
 		case channel.Success:
 			logWithParams.Info("payment successful")
-			// TODO: record success
-			return o.repo.UpdateStatus(ctx, payment.ID, StatusSuccess)
+			_ = o.channelRepo.RecordAttempt(ctx, selectedChannel.Id, true, latency.Milliseconds())
+			return o.paymentRepo.UpdateStatus(ctx, payment.ID, StatusSuccess)
 
 		case channel.InsufficientFunds:
 			logWithParams.Warn("insufficient funds, failing payment", logger.Err(simErr))
-			return o.repo.UpdateStatus(ctx, payment.ID, StatusFailure)
+			_ = o.channelRepo.RecordAttempt(ctx, selectedChannel.Id, true, latency.Milliseconds())
+			return o.paymentRepo.UpdateStatus(ctx, payment.ID, StatusFailure)
 
 		case channel.Timeout:
-			// канал завис: переходим в indeterminate и делаем сверку статуса
 			logWithParams.Warn("channel timeout, checking status...")
-			_ = o.repo.UpdateStatus(ctx, payment.ID, StatusIndeterminate)
+			_ = o.paymentRepo.UpdateStatus(ctx, payment.ID, StatusIndeterminate)
 
 			checkResult, _ := channel.SimulateCheckStatus(ctx, selectedChannel, payment)
 			if checkResult == channel.Success {
-				// сверка показала, что деньги на самом деле списались
-				// TODO: record success
-				return o.repo.UpdateStatus(ctx, payment.ID, StatusSuccess)
+				_ = o.channelRepo.RecordAttempt(ctx, selectedChannel.Id, true, latency.Milliseconds())
+				return o.paymentRepo.UpdateStatus(ctx, payment.ID, StatusSuccess)
 			}
 
-			// TODO: record failure
-			// цикл продолжается, попробуем следующий канал
+			_ = o.channelRepo.RecordAttempt(ctx, selectedChannel.Id, false, latency.Milliseconds())
 
 		case channel.TechnicalError:
-			// канал упал с 500 ошибкой: штрафуем и идем на retry
 			logWithParams.Warn("technical failure, retrying with next channel", logger.Err(simErr))
-			// TODO: record failure
-			// цикл продолжается, попробуем следующий канал
+			_ = o.channelRepo.RecordAttempt(ctx, selectedChannel.Id, false, latency.Milliseconds())
 		}
 	}
 }
 
-func (o *Orchestrator) selectBestUntriedChannel(tried map[string]bool) *domain.Channel {
+func (o *Orchestrator) selectBestUntriedChannel(channels []*domain.Channel, tried map[string]bool) *domain.Channel {
 	var candidates []*domain.Channel
-	for _, ch := range o.channels {
+	for _, ch := range channels {
 		if !tried[ch.Id.String()] {
 			candidates = append(candidates, ch)
 		}

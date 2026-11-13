@@ -4,6 +4,129 @@
         "contact": {}
     },
     "paths": {
+        "/channels": {
+            "get": {
+                "description": "Возвращает все каналы и их текущие метрики",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Channel"
+                ],
+                "summary": "Список платёжных каналов",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/domain.Channel"
+                            }
+                        }
+                    }
+                }
+            },
+            "post": {
+                "description": "Добавляет новый платёжный канал в систему",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Channel"
+                ],
+                "summary": "Создать платёжный канал",
+                "parameters": [
+                    {
+                        "description": "Данные нового канала",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handler.CreateChannelRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/domain.Channel"
+                        }
+                    }
+                }
+            }
+        },
+        "/channels/{id}": {
+            "get": {
+                "description": "Возвращает информацию о канале по идентификатору",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Channel"
+                ],
+                "summary": "Получить платёжный канал",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Идентификатор канала (UUID)",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/domain.Channel"
+                        }
+                    }
+                }
+            },
+            "put": {
+                "description": "Обновляет параметры существующего канала",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Channel"
+                ],
+                "summary": "Обновить платёжный канал",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Идентификатор канала (UUID)",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Новые данные канала",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handler.UpdateChannelRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/domain.Channel"
+                        }
+                    }
+                }
+            }
+        },
         "/payment": {
             "post": {
                 "description": "Регистрирует платёж и отправляет его на обработку",
@@ -98,6 +221,66 @@
                 "PaymentStatusIndeterminate"
             ]
         },
+        "domain.Channel": {
+            "type": "object",
+            "properties": {
+                "consecutiveFailures": {
+                    "type": "integer"
+                },
+                "failedRequests": {
+                    "type": "integer"
+                },
+                "feePercent": {
+                    "type": "integer"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "isActive": {
+                    "type": "boolean"
+                },
+                "latencyMs": {
+                    "type": "integer"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "successPercent": {
+                    "type": "integer"
+                },
+                "totalRequests": {
+                    "type": "integer"
+                }
+            }
+        },
+        "handler.CreateChannelRequest": {
+            "type": "object",
+            "required": [
+                "isActive",
+                "name"
+            ],
+            "properties": {
+                "feePercent": {
+                    "type": "integer",
+                    "minimum": 0
+                },
+                "isActive": {
+                    "type": "boolean"
+                },
+                "latencyMs": {
+                    "type": "integer",
+                    "minimum": 0
+                },
+                "name": {
+                    "type": "string"
+                },
+                "successPercent": {
+                    "type": "integer",
+                    "maximum": 100,
+                    "minimum": 0
+                }
+            }
+        },
         "handler.PaymentRequest": {
             "type": "object",
             "required": [
@@ -112,6 +295,34 @@
                 "userId": {
                     "type": "string",
                     "example": "123e4567-e89b-12d3-a456-426614174000"
+                }
+            }
+        },
+        "handler.UpdateChannelRequest": {
+            "type": "object",
+            "required": [
+                "isActive",
+                "name"
+            ],
+            "properties": {
+                "feePercent": {
+                    "type": "integer",
+                    "minimum": 0
+                },
+                "isActive": {
+                    "type": "boolean"
+                },
+                "latencyMs": {
+                    "type": "integer",
+                    "minimum": 0
+                },
+                "name": {
+                    "type": "string"
+                },
+                "successPercent": {
+                    "type": "integer",
+                    "maximum": 100,
+                    "minimum": 0
                 }
             }
         }
