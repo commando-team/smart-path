@@ -74,6 +74,7 @@ func main() {
 
 	paymentRepo := repository.NewPaymentRepository(pool)
 	channelRepo := repository.NewChannelRepository(pool)
+
 	orch := orchestrator.New(log, paymentRepo, channelRepo)
 
 	consumer := kafka.NewConsumer(kafkaBrokers, kafkaTopic, consumerGroup, log, paymentRepo, orch)
@@ -90,12 +91,21 @@ func main() {
 	}()
 
 	paymentService := service.NewPaymentService(log, paymentRepo, producer)
+	channelService := service.NewChannelService(log, channelRepo)
+
 	apiHandler := handler.NewApiHandler(log, paymentService)
+	channelHandler := handler.NewChannelHandler(log, channelService)
 
 	r := gin.Default()
 	r.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
+
 	r.POST("/payment", apiHandler.Pay)
 	r.GET("/payment/:id", apiHandler.GetPayment)
+
+	r.GET("/channels", channelHandler.ListChannels)
+	r.GET("/channels/:id", channelHandler.GetChannel)
+	r.POST("/channels", channelHandler.CreateChannel)
+	r.PUT("/channels/:id", channelHandler.UpdateChannel)
 
 	srv := &http.Server{
 		Addr:    fmt.Sprintf(":%s", cfg.Port),
