@@ -9,6 +9,7 @@ import (
 	"fmt"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 type PaymentStatus string
@@ -55,6 +56,19 @@ func (ns NullPaymentStatus) Value() (driver.Value, error) {
 		return nil, nil
 	}
 	return string(ns.PaymentStatus), nil
+}
+
+type Channel struct {
+	ID                  uuid.UUID
+	Name                string
+	IsActive            bool
+	FeePercent          int64
+	SuccessPercent      int64
+	LatencyMs           int64
+	TotalRequests       int64
+	FailedRequests      int64
+	ConsecutiveFailures int64
+	UpdatedAt           pgtype.Timestamptz
 }
 
 type Payment struct {

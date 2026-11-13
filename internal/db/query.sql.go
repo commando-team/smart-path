@@ -11,6 +11,44 @@ import (
 	"github.com/google/uuid"
 )
 
+const createChannel = `-- name: CreateChannel :one
+INSERT INTO channels (name, is_active, fee_percent, success_percent, latency_ms)
+VALUES ($1, $2, $3, $4, $5)
+RETURNING id, name, is_active, fee_percent, success_percent, latency_ms, total_requests, failed_requests, consecutive_failures, updated_at
+`
+
+type CreateChannelParams struct {
+	Name           string
+	IsActive       bool
+	FeePercent     int64
+	SuccessPercent int64
+	LatencyMs      int64
+}
+
+func (q *Queries) CreateChannel(ctx context.Context, arg CreateChannelParams) (Channel, error) {
+	row := q.db.QueryRow(ctx, createChannel,
+		arg.Name,
+		arg.IsActive,
+		arg.FeePercent,
+		arg.SuccessPercent,
+		arg.LatencyMs,
+	)
+	var i Channel
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.IsActive,
+		&i.FeePercent,
+		&i.SuccessPercent,
+		&i.LatencyMs,
+		&i.TotalRequests,
+		&i.FailedRequests,
+		&i.ConsecutiveFailures,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const createPayment = `-- name: CreatePayment :one
 INSERT INTO payments (user_id, amount, status)
 VALUES ($1, $2, $3)
@@ -30,6 +68,29 @@ func (q *Queries) CreatePayment(ctx context.Context, arg CreatePaymentParams) (u
 	return id, err
 }
 
+const getChannelByID = `-- name: GetChannelByID :one
+SELECT id, name, is_active, fee_percent, success_percent, latency_ms, total_requests, failed_requests, consecutive_failures, updated_at FROM channels
+WHERE id = $1 LIMIT 1
+`
+
+func (q *Queries) GetChannelByID(ctx context.Context, id uuid.UUID) (Channel, error) {
+	row := q.db.QueryRow(ctx, getChannelByID, id)
+	var i Channel
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.IsActive,
+		&i.FeePercent,
+		&i.SuccessPercent,
+		&i.LatencyMs,
+		&i.TotalRequests,
+		&i.FailedRequests,
+		&i.ConsecutiveFailures,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const getPayment = `-- name: GetPayment :one
 SELECT id, user_id, amount, status FROM payments
 WHERE id = $1 LIMIT 1
@@ -45,6 +106,155 @@ func (q *Queries) GetPayment(ctx context.Context, id uuid.UUID) (Payment, error)
 		&i.Status,
 	)
 	return i, err
+}
+
+const listActiveChannels = `-- name: ListActiveChannels :many
+SELECT id, name, is_active, fee_percent, success_percent, latency_ms, total_requests, failed_requests, consecutive_failures, updated_at FROM channels
+WHERE is_active = true
+ORDER BY name ASC
+`
+
+func (q *Queries) ListActiveChannels(ctx context.Context) ([]Channel, error) {
+	rows, err := q.db.Query(ctx, listActiveChannels)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Channel
+	for rows.Next() {
+		var i Channel
+		if err := rows.Scan(
+			&i.ID,
+			&i.Name,
+			&i.IsActive,
+			&i.FeePercent,
+			&i.SuccessPercent,
+			&i.LatencyMs,
+			&i.TotalRequests,
+			&i.FailedRequests,
+			&i.ConsecutiveFailures,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listChannels = `-- name: ListChannels :many
+SELECT id, name, is_active, fee_percent, success_percent, latency_ms, total_requests, failed_requests, consecutive_failures, updated_at FROM channels
+ORDER BY name ASC
+`
+
+func (q *Queries) ListChannels(ctx context.Context) ([]Channel, error) {
+	rows, err := q.db.Query(ctx, listChannels)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Channel
+	for rows.Next() {
+		var i Channel
+		if err := rows.Scan(
+			&i.ID,
+			&i.Name,
+			&i.IsActive,
+			&i.FeePercent,
+			&i.SuccessPercent,
+			&i.LatencyMs,
+			&i.TotalRequests,
+			&i.FailedRequests,
+			&i.ConsecutiveFailures,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const updateChannel = `-- name: UpdateChannel :one
+UPDATE channels
+SET name = $2, is_active = $3, fee_percent = $4, success_percent = $5, latency_ms = $6, updated_at = NOW()
+WHERE id = $1
+RETURNING id, name, is_active, fee_percent, success_percent, latency_ms, total_requests, failed_requests, consecutive_failures, updated_at
+`
+
+type UpdateChannelParams struct {
+	ID             uuid.UUID
+	Name           string
+	IsActive       bool
+	FeePercent     int64
+	SuccessPercent int64
+	LatencyMs      int64
+}
+
+func (q *Queries) UpdateChannel(ctx context.Context, arg UpdateChannelParams) (Channel, error) {
+	row := q.db.QueryRow(ctx, updateChannel,
+		arg.ID,
+		arg.Name,
+		arg.IsActive,
+		arg.FeePercent,
+		arg.SuccessPercent,
+		arg.LatencyMs,
+	)
+	var i Channel
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.IsActive,
+		&i.FeePercent,
+		&i.SuccessPercent,
+		&i.LatencyMs,
+		&i.TotalRequests,
+		&i.FailedRequests,
+		&i.ConsecutiveFailures,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const updateChannelMetrics = `-- name: UpdateChannelMetrics :exec
+UPDATE channels
+SET total_requests = $2,
+    failed_requests = $3,
+    consecutive_failures = $4,
+    success_percent = $5,
+    latency_ms = $6,
+    is_active = $7,
+    updated_at = NOW()
+WHERE id = $1
+`
+
+type UpdateChannelMetricsParams struct {
+	ID                  uuid.UUID
+	TotalRequests       int64
+	FailedRequests      int64
+	ConsecutiveFailures int64
+	SuccessPercent      int64
+	LatencyMs           int64
+	IsActive            bool
+}
+
+func (q *Queries) UpdateChannelMetrics(ctx context.Context, arg UpdateChannelMetricsParams) error {
+	_, err := q.db.Exec(ctx, updateChannelMetrics,
+		arg.ID,
+		arg.TotalRequests,
+		arg.FailedRequests,
+		arg.ConsecutiveFailures,
+		arg.SuccessPercent,
+		arg.LatencyMs,
+		arg.IsActive,
+	)
+	return err
 }
 
 const updatePaymentStatus = `-- name: UpdatePaymentStatus :exec
