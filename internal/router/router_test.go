@@ -56,4 +56,19 @@ func TestGetBestChannel(t *testing.T) {
 		got := GetBestChannel(channels)
 		assert.Nil(t, got)
 	})
+
+	t.Run("should select cheapest channel with StrategyCheap", func(t *testing.T) {
+		cheapestSlowChannel := &domain.Channel{
+			Id:             uuid.New(),
+			Name:           "Cheapest",
+			IsActive:       true,
+			FeePercent:     0,
+			SuccessPercent: 85,
+			LatencyMs:      600,
+		}
+		channels := []*domain.Channel{bestChannel, cheapestSlowChannel}
+
+		got := GetBestChannelByStrategy(channels, StrategyCheap)
+		assert.Equal(t, got, cheapestSlowChannel)
+	})
 }

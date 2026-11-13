@@ -8,6 +8,13 @@ import (
 	"github.com/google/uuid"
 )
 
+type RoutingStrategy string
+
+const (
+	StrategySmart RoutingStrategy = "smart"
+	StrategyCheap RoutingStrategy = "cheap"
+)
+
 const (
 	WeightFee     = 100
 	WeightLatency = 1
@@ -34,6 +41,10 @@ var DefaultChannels = []*domain.Channel{
 }
 
 func GetBestChannel(channels []*domain.Channel) *domain.Channel {
+	return GetBestChannelByStrategy(channels, StrategySmart)
+}
+
+func GetBestChannelByStrategy(channels []*domain.Channel, strategy RoutingStrategy) *domain.Channel {
 	var activeChannels []*domain.Channel
 
 	for _, channel := range channels {
@@ -46,9 +57,22 @@ func GetBestChannel(channels []*domain.Channel) *domain.Channel {
 		return nil
 	}
 
-	slices.SortFunc(activeChannels, func(a, b *domain.Channel) int {
-		return cmp.Compare(calculateScore(a), calculateScore(b))
-	})
+	switch strategy {
+	case StrategyCheap:
+		slices.SortFunc(activeChannels, func(a, b *domain.Channel) int {
+			if n := cmp.Compare(a.FeePercent, b.FeePercent); n != 0 {
+				return n
+			}
+			if n := cmp.Compare(a.LatencyMs, b.LatencyMs); n != 0 {
+				return n
+			}
+			return cmp.Compare(100-a.SuccessPercent, 100-b.SuccessPercent)
+		})
+	default:
+		slices.SortFunc(activeChannels, func(a, b *domain.Channel) int {
+			return cmp.Compare(calculateScore(a), calculateScore(b))
+		})
+	}
 
 	return activeChannels[0]
 }
