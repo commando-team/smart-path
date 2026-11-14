@@ -120,7 +120,7 @@ jobs:
           exit 1
 
       - name: Run smoke tests
-        run: go test -tags=smoke -count=1 -v ./tests/smoke -run '^TestPayment(Creation|Processing)$'
+        run: go test -tags=smoke -count=1 -v ./tests/smoke -run '^Test(ChannelCRUD|Payment(Creation|Processing))$'
 
       - name: Show container logs on failure
         if: failure()
