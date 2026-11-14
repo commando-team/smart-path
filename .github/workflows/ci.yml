@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [ "main" ]
+    branches: [ "main", "QAlex_branch" ]
   pull_request:
     branches: [ "main" ]
 
@@ -65,6 +65,7 @@ jobs:
       DB_HOST: db
       DB_PORT: '5432'
       DB_NAME: backend
+      KAFKA_BROKER: kafka:29092
     steps:
       - name: Check out code
         uses: actions/checkout@v4
@@ -118,8 +119,8 @@ jobs:
           echo 'API did not become ready'
           exit 1
 
-      - name: Test payment creation and retrieval
-        run: go test -tags=smoke -count=1 -v ./tests/smoke -run '^TestPaymentCreation$'
+      - name: Run smoke tests
+        run: go test -tags=smoke -count=1 -v ./tests/smoke -run '^Test(ChannelCRUD|Payment(Creation|Processing))$'
 
       - name: Show container logs on failure
         if: failure()

@@ -148,7 +148,7 @@ func sendPayment(ctx context.Context, client *http.Client, baseURL string, amoun
 	if err != nil {
 		return uuid.Nil, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusCreated {
 		body, _ := io.ReadAll(resp.Body)
@@ -185,13 +185,13 @@ func pollPaymentStatus(ctx context.Context, client *http.Client, baseURL string,
 			}
 
 			if resp.StatusCode != http.StatusOK {
-				resp.Body.Close()
+				_ = resp.Body.Close()
 				continue
 			}
 
 			var statusResp paymentStatusResponse
 			err = json.NewDecoder(resp.Body).Decode(&statusResp)
-			resp.Body.Close()
+			_ = resp.Body.Close()
 			if err != nil {
 				continue
 			}
@@ -214,7 +214,7 @@ func printChannelStats(ctx context.Context, client *http.Client, baseURL string,
 		log.Error("failed to retrieve channel stats", slog.String("error", err.Error()))
 		return
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	var channels []channelResponse
 	if err := json.NewDecoder(resp.Body).Decode(&channels); err != nil {
