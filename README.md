@@ -3,8 +3,17 @@
 ## Запуск
 
 ```bash
-docker compose -f 'compose.dev.yaml' up -d --build
+docker compose -f 'compose.yaml' up -d --build
 ```
+
+## Запуск симуляции
+
+```bash
+go run ./cmd/simulator/main.go -n 10 -c 2
+```
+
+- `-n` Количество запросов
+- `-c` Количество потоков
 
 ## Swagger
 

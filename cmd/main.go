@@ -17,7 +17,6 @@ import (
 	"github.com/commando-team/smart-path/internal/logger"
 	"github.com/commando-team/smart-path/internal/orchestrator"
 	"github.com/commando-team/smart-path/internal/repository"
-	"github.com/commando-team/smart-path/internal/router"
 	"github.com/commando-team/smart-path/internal/service"
 	"github.com/gin-gonic/gin"
 	"github.com/golang-migrate/migrate/v4"
@@ -74,7 +73,9 @@ func main() {
 	}()
 
 	paymentRepo := repository.NewPaymentRepository(pool)
-	orch := orchestrator.New(log, paymentRepo, router.DefaultChannels)
+	channelRepo := repository.NewChannelRepository(pool)
+
+	orch := orchestrator.New(log, paymentRepo, channelRepo)
 
 	consumer := kafka.NewConsumer(kafkaBrokers, kafkaTopic, consumerGroup, log, paymentRepo, orch)
 	defer func() {
@@ -90,12 +91,21 @@ func main() {
 	}()
 
 	paymentService := service.NewPaymentService(log, paymentRepo, producer)
+	channelService := service.NewChannelService(log, channelRepo)
+
 	apiHandler := handler.NewApiHandler(log, paymentService)
+	channelHandler := handler.NewChannelHandler(log, channelService)
 
 	r := gin.Default()
 	r.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
+
 	r.POST("/payment", apiHandler.Pay)
 	r.GET("/payment/:id", apiHandler.GetPayment)
+
+	r.GET("/channels", channelHandler.ListChannels)
+	r.GET("/channels/:id", channelHandler.GetChannel)
+	r.POST("/channels", channelHandler.CreateChannel)
+	r.PUT("/channels/:id", channelHandler.UpdateChannel)
 
 	srv := &http.Server{
 		Addr:    fmt.Sprintf(":%s", cfg.Port),

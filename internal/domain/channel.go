@@ -3,10 +3,13 @@ package domain
 import "github.com/google/uuid"
 
 type Channel struct {
-	Id             uuid.UUID
-	Name           string
-	IsActive       bool
-	FeePercent     int64
-	SuccessPercent int64
-	LatencyMs      int64
+	Id                  uuid.UUID `json:"id"`
+	Name                string    `json:"name"`
+	IsActive            bool      `json:"isActive"`
+	FeePercent          int64     `json:"feePercent"`
+	SuccessPercent      int64     `json:"successPercent"`
+	LatencyMs           int64     `json:"latencyMs"`
+	TotalRequests       int64     `json:"totalRequests"`
+	FailedRequests      int64     `json:"failedRequests"`
+	ConsecutiveFailures int64     `json:"consecutiveFailures"`
 }

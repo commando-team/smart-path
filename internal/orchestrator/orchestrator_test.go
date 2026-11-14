@@ -10,13 +10,15 @@ import (
 	"github.com/commando-team/smart-path/internal/orchestrator/mocks"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
 )
 
 func TestOrchestrator_ProcessPayment_SuccessOnFirstChannel(t *testing.T) {
 	discardLogger := logger.NewDiscardLogger()
 
+	channelID := uuid.New()
 	successChannel := &domain.Channel{
-		Id:             uuid.New(),
+		Id:             channelID,
 		Name:           "100% Success Channel",
 		IsActive:       true,
 		FeePercent:     0,
@@ -24,45 +26,50 @@ func TestOrchestrator_ProcessPayment_SuccessOnFirstChannel(t *testing.T) {
 		LatencyMs:      0,
 	}
 
-	channels := []*domain.Channel{successChannel}
 	payment := &db.Payment{
 		ID:     uuid.New(),
 		Amount: 1000,
 	}
 
-	mockRepo := mocks.NewMockPaymentRepository(t)
+	mockPaymentRepo := mocks.NewMockPaymentRepository(t)
+	mockChannelRepo := mocks.NewMockChannelRepository(t)
 
 	ctx := context.Background()
-	mockRepo.On("UpdateStatus", ctx, payment.ID, StatusRouting).Return(nil).Once()
-	mockRepo.On("UpdateStatus", ctx, payment.ID, StatusProcessing).Return(nil).Once()
-	mockRepo.On("UpdateStatus", ctx, payment.ID, StatusSuccess).Return(nil).Once()
+	mockChannelRepo.On("GetActiveChannels", ctx).Return([]*domain.Channel{successChannel}, nil).Once()
+	mockPaymentRepo.On("UpdateStatus", ctx, payment.ID, StatusRouting).Return(nil).Once()
+	mockPaymentRepo.On("UpdateStatus", ctx, payment.ID, StatusProcessing).Return(nil).Once()
+	mockChannelRepo.On("RecordAttempt", ctx, channelID, true, mock.AnythingOfType("int64")).Return(nil).Once()
+	mockPaymentRepo.On("UpdateStatus", ctx, payment.ID, StatusSuccess).Return(nil).Once()
 
-	orch := New(discardLogger, mockRepo, channels)
+	orch := New(discardLogger, mockPaymentRepo, mockChannelRepo)
 	err := orch.ProcessPayment(ctx, payment)
 
 	assert.NoError(t, err)
 
-	mockRepo.AssertExpectations(t)
+	mockPaymentRepo.AssertExpectations(t)
+	mockChannelRepo.AssertExpectations(t)
 }
 
 func TestOrchestrator_ProcessPayment_NoChannelsLeft(t *testing.T) {
 	discardLogger := logger.NewDiscardLogger()
 
-	var channels []*domain.Channel
 	payment := &db.Payment{
 		ID: uuid.New(),
 	}
 
-	mockRepo := mocks.NewMockPaymentRepository(t)
+	mockPaymentRepo := mocks.NewMockPaymentRepository(t)
+	mockChannelRepo := mocks.NewMockChannelRepository(t)
 	ctx := context.Background()
 
-	mockRepo.On("UpdateStatus", ctx, payment.ID, StatusRouting).Return(nil).Once()
-	mockRepo.On("UpdateStatus", ctx, payment.ID, StatusFailure).Return(nil).Once()
+	mockChannelRepo.On("GetActiveChannels", ctx).Return([]*domain.Channel{}, nil).Once()
+	mockPaymentRepo.On("UpdateStatus", ctx, payment.ID, StatusRouting).Return(nil).Once()
+	mockPaymentRepo.On("UpdateStatus", ctx, payment.ID, StatusFailure).Return(nil).Once()
 
-	orch := New(discardLogger, mockRepo, channels)
+	orch := New(discardLogger, mockPaymentRepo, mockChannelRepo)
 	err := orch.ProcessPayment(ctx, payment)
 
 	assert.NoError(t, err)
 
-	mockRepo.AssertExpectations(t)
+	mockPaymentRepo.AssertExpectations(t)
+	mockChannelRepo.AssertExpectations(t)
 }
