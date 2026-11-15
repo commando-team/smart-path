@@ -16,6 +16,7 @@ import (
 type PaymentRepository interface {
 	CreatePayment(ctx context.Context, userID uuid.UUID, amount int64, status string) (uuid.UUID, error)
 	GetPayment(ctx context.Context, paymentID uuid.UUID) (db.Payment, error)
+	UpdateStatus(ctx context.Context, paymentID uuid.UUID, status string) error
 }
 
 type PaymentProducer interface {
@@ -52,6 +53,16 @@ func (s *PaymentService) Pay(ctx context.Context, userID uuid.UUID, amount int64
 
 	if err := s.producer.SendPayment(ctx, msg); err != nil {
 		s.log.Error("failed to send payment to kafka", logger.Err(err))
+
+		failCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 3*time.Second)
+		defer cancel()
+		if updateErr := s.repo.UpdateStatus(failCtx, paymentID, orchestrator.StatusFailure); updateErr != nil {
+			s.log.Error("failed to mark payment as failure after kafka error",
+				slog.String("payment_id", paymentID.String()),
+				logger.Err(updateErr),
+			)
+		}
+
 		return uuid.Nil, fmt.Errorf("produce payment: %w", err)
 	}
 

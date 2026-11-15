@@ -12,8 +12,11 @@ import (
 	"github.com/commando-team/smart-path/internal/logger"
 	"github.com/commando-team/smart-path/internal/orchestrator"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/segmentio/kafka-go"
 )
+
+var errPermanent = errors.New("permanent message error")
 
 type PaymentRepository interface {
 	GetPayment(ctx context.Context, paymentID uuid.UUID) (db.Payment, error)
@@ -38,8 +41,9 @@ func NewConsumer(
 		Brokers:               brokers,
 		GroupID:               groupID,
 		Topic:                 topic,
-		MinBytes:              10e3,
+		MinBytes:              1,
 		MaxBytes:              10e6,
+		MaxWait:               500 * time.Millisecond,
 		WatchPartitionChanges: true,
 	})
 
@@ -61,31 +65,59 @@ func (c *Consumer) Start(ctx context.Context) error {
 				return nil
 			}
 			c.log.Error("failed to fetch kafka message", logger.Err(err))
-			time.Sleep(200 * time.Millisecond)
+			select {
+			case <-time.After(200 * time.Millisecond):
+			case <-ctx.Done():
+				return nil
+			}
 			continue
 		}
 
 		if err := c.process(ctx, msg); err != nil {
-			c.log.Error("failed to process message", logger.Err(err))
-			continue
+			if errors.Is(err, context.Canceled) {
+				return nil
+			}
+			c.log.Error("failed to process message",
+				slog.Int("partition", msg.Partition),
+				slog.Int64("offset", msg.Offset),
+				logger.Err(err),
+			)
+			if !errors.Is(err, errPermanent) {
+				select {
+				case <-time.After(200 * time.Millisecond):
+				case <-ctx.Done():
+					return nil
+				}
+				continue
+			}
 		}
 
 		if err := c.reader.CommitMessages(ctx, msg); err != nil {
+			if errors.Is(err, context.Canceled) {
+				return nil
+			}
 			c.log.Error("failed to commit message", logger.Err(err))
 		}
 	}
 }
 
 func (c *Consumer) process(ctx context.Context, msg kafka.Message) error {
-	c.log.Info("processing message", slog.Any("msg", msg))
-
 	var task PaymentMessage
 	if err := json.Unmarshal(msg.Value, &task); err != nil {
-		return fmt.Errorf("failed to unmarshal payload: %w", err)
+		return fmt.Errorf("%w: failed to unmarshal payload: %v", errPermanent, err)
 	}
+
+	c.log.Info("processing payment message",
+		slog.String("payment_id", task.PaymentID.String()),
+		slog.Int("partition", msg.Partition),
+		slog.Int64("offset", msg.Offset),
+	)
 
 	payment, err := c.repo.GetPayment(ctx, task.PaymentID)
 	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return fmt.Errorf("%w: payment not found: %s", errPermanent, task.PaymentID)
+		}
 		return fmt.Errorf("failed to find payment: %w", err)
 	}
 

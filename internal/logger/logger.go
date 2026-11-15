@@ -9,16 +9,14 @@ import (
 )
 
 func New(cfg *config.Config) *slog.Logger {
-	var log *slog.Logger
-
 	switch cfg.Environment {
 	case config.EnvDevelopment:
-		log = slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelDebug}))
+		return slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelDebug}))
 	case config.EnvRelease:
-		slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
+		return slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
+	default:
+		return slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
 	}
-
-	return log
 }
 
 func NewDiscardLogger() *slog.Logger {
