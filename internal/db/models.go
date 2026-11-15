@@ -72,8 +72,9 @@ type Channel struct {
 }
 
 type Payment struct {
-	ID     uuid.UUID
-	UserID uuid.UUID
-	Amount int64
-	Status PaymentStatus
+	ID             uuid.UUID
+	UserID         uuid.UUID
+	Amount         int64
+	Status         PaymentStatus
+	IdempotencyKey pgtype.Text
 }

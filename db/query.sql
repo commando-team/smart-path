@@ -1,11 +1,22 @@
 -- name: CreatePayment :one
-INSERT INTO payments (user_id, amount, status)
-VALUES ($1, $2, $3)
-RETURNING id;
+INSERT INTO payments (user_id, amount, status, idempotency_key)
+VALUES ($1, $2, $3, $4)
+ON CONFLICT (idempotency_key) DO NOTHING
+RETURNING *;
 
 -- name: GetPayment :one
 SELECT * FROM payments
 WHERE id = $1 LIMIT 1;
+
+-- name: GetPaymentByIdempotencyKey :one
+SELECT * FROM payments
+WHERE idempotency_key = $1 LIMIT 1;
+
+-- name: ClaimPaymentForRouting :one
+UPDATE payments
+SET status = 'routing'
+WHERE id = $1 AND status = 'pending'
+RETURNING *;
 
 -- name: UpdatePaymentStatus :exec
 UPDATE payments

@@ -19,7 +19,7 @@ import (
 var errPermanent = errors.New("permanent message error")
 
 type PaymentRepository interface {
-	GetPayment(ctx context.Context, paymentID uuid.UUID) (db.Payment, error)
+	ClaimPaymentForRouting(ctx context.Context, paymentID uuid.UUID) (db.Payment, error)
 }
 
 type Consumer struct {
@@ -107,22 +107,15 @@ func (c *Consumer) process(ctx context.Context, msg kafka.Message) error {
 		return fmt.Errorf("%w: failed to unmarshal payload: %v", errPermanent, err)
 	}
 
-	c.log.Info("processing payment message",
-		slog.String("payment_id", task.PaymentID.String()),
-		slog.Int("partition", msg.Partition),
-		slog.Int64("offset", msg.Offset),
-	)
-
-	payment, err := c.repo.GetPayment(ctx, task.PaymentID)
+	payment, err := c.repo.ClaimPaymentForRouting(ctx, task.PaymentID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return fmt.Errorf("%w: payment not found: %s", errPermanent, task.PaymentID)
+			c.log.Info("payment already claimed or processed, skipping",
+				slog.String("payment_id", task.PaymentID.String()),
+			)
+			return nil
 		}
-		return fmt.Errorf("failed to find payment: %w", err)
-	}
-
-	if string(payment.Status) != orchestrator.StatusPending {
-		return nil
+		return fmt.Errorf("failed to claim payment: %w", err)
 	}
 
 	if err := c.orchestrator.ProcessPayment(ctx, &payment); err != nil {

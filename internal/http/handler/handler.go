@@ -5,11 +5,12 @@ import (
 	"log/slog"
 
 	"github.com/commando-team/smart-path/internal/db"
+	"github.com/commando-team/smart-path/internal/service"
 	"github.com/google/uuid"
 )
 
 type PaymentService interface {
-	Pay(ctx context.Context, userID uuid.UUID, amount int64) (uuid.UUID, error)
+	Pay(ctx context.Context, userID uuid.UUID, amount int64, idempotencyKey string) (*service.PayResult, error)
 	GetPayment(ctx context.Context, paymentID uuid.UUID) (*db.Payment, error)
 }
 

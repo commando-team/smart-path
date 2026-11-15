@@ -25,6 +25,56 @@ func TestPaymentProcessing(t *testing.T) {
 	checkPayment(t, true)
 }
 
+func TestPaymentIdempotency(t *testing.T) {
+	baseURL := os.Getenv("SMOKE_BASE_URL")
+	if baseURL == "" {
+		baseURL = "http://localhost:8080"
+	}
+	baseURL = strings.TrimRight(baseURL, "/")
+	client := &http.Client{Timeout: 15 * time.Second}
+
+	userID := uuid.New()
+	idemKey := "smoke-" + uuid.New().String()
+	body := fmt.Sprintf(`{"userId":%q,"amount":1000}`, userID.String())
+
+	doPay := func(payload string) (int, uuid.UUID) {
+		req, err := http.NewRequest(http.MethodPost, baseURL+"/payment", bytes.NewBufferString(payload))
+		if err != nil {
+			t.Fatalf("new request: %v", err)
+		}
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Idempotency-Key", idemKey)
+
+		resp, err := client.Do(req)
+		if err != nil {
+			t.Fatalf("do request: %v", err)
+		}
+		defer func() { _ = resp.Body.Close() }()
+
+		var res struct {
+			PaymentID uuid.UUID `json:"paymentId"`
+		}
+		_ = json.NewDecoder(resp.Body).Decode(&res)
+		return resp.StatusCode, res.PaymentID
+	}
+
+	code1, id1 := doPay(body)
+	if code1 != http.StatusCreated || id1 == uuid.Nil {
+		t.Fatalf("first request: got status=%d id=%s, want 201", code1, id1)
+	}
+
+	code2, id2 := doPay(body)
+	if code2 != http.StatusOK || id2 != id1 {
+		t.Fatalf("duplicate request: got status=%d id=%s, want 200 id=%s", code2, id2, id1)
+	}
+
+	conflictBody := fmt.Sprintf(`{"userId":%q,"amount":2000}`, userID.String())
+	code3, _ := doPay(conflictBody)
+	if code3 != http.StatusConflict {
+		t.Fatalf("conflict request: got status=%d, want 409", code3)
+	}
+}
+
 func checkPayment(t *testing.T, waitForProcessing bool) {
 	t.Helper()
 	baseURL := os.Getenv("SMOKE_BASE_URL")
@@ -44,11 +94,11 @@ func checkPayment(t *testing.T, waitForProcessing bool) {
 		Status    string    `json:"status"`
 	}
 	if resp.StatusCode != http.StatusCreated {
-		resp.Body.Close()
+		_ = resp.Body.Close()
 		t.Fatalf("create payment: got HTTP %d, want 201", resp.StatusCode)
 	}
 	err = json.NewDecoder(resp.Body).Decode(&created)
-	resp.Body.Close()
+	_ = resp.Body.Close()
 	if err != nil || created.PaymentID == uuid.Nil || created.Status != "PENDING" {
 		t.Fatalf("unexpected creation response: %+v, error: %v", created, err)
 	}
@@ -66,7 +116,7 @@ func checkPayment(t *testing.T, waitForProcessing bool) {
 			Status string
 		}
 		err = json.NewDecoder(resp.Body).Decode(&payment)
-		resp.Body.Close()
+		_ = resp.Body.Close()
 		if resp.StatusCode != http.StatusOK || err != nil {
 			t.Fatalf("get payment: HTTP %d, decode error: %v", resp.StatusCode, err)
 		}

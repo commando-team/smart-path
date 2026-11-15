@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"time"
@@ -13,8 +14,16 @@ import (
 	"github.com/google/uuid"
 )
 
+var ErrIdempotencyConflict = errors.New("idempotency key already used with different payment parameters")
+
+type PayResult struct {
+	PaymentID uuid.UUID
+	Status    db.PaymentStatus
+	Created   bool
+}
+
 type PaymentRepository interface {
-	CreatePayment(ctx context.Context, userID uuid.UUID, amount int64, status string) (uuid.UUID, error)
+	CreatePayment(ctx context.Context, userID uuid.UUID, amount int64, status string, idempotencyKey string) (db.Payment, bool, error)
 	GetPayment(ctx context.Context, paymentID uuid.UUID) (db.Payment, error)
 	UpdateStatus(ctx context.Context, paymentID uuid.UUID, status string) error
 }
@@ -37,15 +46,36 @@ func NewPaymentService(log *slog.Logger, repo PaymentRepository, producer Paymen
 	}
 }
 
-func (s *PaymentService) Pay(ctx context.Context, userID uuid.UUID, amount int64) (uuid.UUID, error) {
-	paymentID, err := s.repo.CreatePayment(ctx, userID, amount, orchestrator.StatusPending)
+func (s *PaymentService) Pay(ctx context.Context, userID uuid.UUID, amount int64, idempotencyKey string) (*PayResult, error) {
+	payment, created, err := s.repo.CreatePayment(ctx, userID, amount, orchestrator.StatusPending, idempotencyKey)
 	if err != nil {
 		s.log.Error("failed to create payment", logger.Err(err))
-		return uuid.Nil, fmt.Errorf("create payment: %w", err)
+		return nil, fmt.Errorf("create payment: %w", err)
+	}
+
+	if !created {
+		if payment.UserID != userID || payment.Amount != amount {
+			s.log.Warn("idempotency conflict",
+				slog.String("idempotency_key", idempotencyKey),
+				slog.String("existing_payment_id", payment.ID.String()),
+			)
+			return nil, ErrIdempotencyConflict
+		}
+
+		s.log.Info("duplicate payment request deduplicated",
+			slog.String("idempotency_key", idempotencyKey),
+			slog.String("payment_id", payment.ID.String()),
+			slog.String("status", string(payment.Status)),
+		)
+		return &PayResult{
+			PaymentID: payment.ID,
+			Status:    payment.Status,
+			Created:   false,
+		}, nil
 	}
 
 	msg := kafka.PaymentMessage{
-		PaymentID: paymentID,
+		PaymentID: payment.ID,
 		UserID:    userID,
 		Amount:    amount,
 		CreatedAt: time.Now(),
@@ -56,17 +86,21 @@ func (s *PaymentService) Pay(ctx context.Context, userID uuid.UUID, amount int64
 
 		failCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 3*time.Second)
 		defer cancel()
-		if updateErr := s.repo.UpdateStatus(failCtx, paymentID, orchestrator.StatusFailure); updateErr != nil {
+		if updateErr := s.repo.UpdateStatus(failCtx, payment.ID, orchestrator.StatusFailure); updateErr != nil {
 			s.log.Error("failed to mark payment as failure after kafka error",
-				slog.String("payment_id", paymentID.String()),
+				slog.String("payment_id", payment.ID.String()),
 				logger.Err(updateErr),
 			)
 		}
 
-		return uuid.Nil, fmt.Errorf("produce payment: %w", err)
+		return nil, fmt.Errorf("produce payment: %w", err)
 	}
 
-	return paymentID, nil
+	return &PayResult{
+		PaymentID: payment.ID,
+		Status:    payment.Status,
+		Created:   true,
+	}, nil
 }
 
 func (s *PaymentService) GetPayment(ctx context.Context, paymentID uuid.UUID) (*db.Payment, error) {

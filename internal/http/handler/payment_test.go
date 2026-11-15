@@ -11,28 +11,44 @@ import (
 	"testing"
 
 	"github.com/commando-team/smart-path/internal/db"
+	"github.com/commando-team/smart-path/internal/service"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/stretchr/testify/assert"
 )
 
 // Заглушка вместо настоящего сервиса платежей.
 type fakePaymentService struct {
-	paymentID uuid.UUID
-	payment   *db.Payment
-	err       error
-	payCalled bool
-	getCalled bool
-	gotID     uuid.UUID
+	paymentID  uuid.UUID
+	payResult  *service.PayResult
+	payment    *db.Payment
+	err        error
+	payCalled  bool
+	getCalled  bool
+	gotID      uuid.UUID
+	gotIdemKey string
 }
 
 func (f *fakePaymentService) Pay(
 	ctx context.Context,
 	userID uuid.UUID,
 	amount int64,
-) (uuid.UUID, error) {
+	idempotencyKey string,
+) (*service.PayResult, error) {
 	f.payCalled = true
-	return f.paymentID, f.err
+	f.gotIdemKey = idempotencyKey
+	if f.err != nil {
+		return nil, f.err
+	}
+	if f.payResult != nil {
+		return f.payResult, nil
+	}
+	return &service.PayResult{
+		PaymentID: f.paymentID,
+		Status:    db.PaymentStatusPending,
+		Created:   true,
+	}, nil
 }
 
 func (f *fakePaymentService) GetPayment(
@@ -44,10 +60,10 @@ func (f *fakePaymentService) GetPayment(
 	return f.payment, f.err
 }
 
-func newTestRouter(service *fakePaymentService) *gin.Engine {
+func newTestRouter(svc *fakePaymentService) *gin.Engine {
 	gin.SetMode(gin.TestMode)
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
-	h := NewApiHandler(log, service)
+	h := NewApiHandler(log, svc)
 	router := gin.New()
 	router.POST("/payment", h.Pay)
 	router.GET("/payment/:id", h.GetPayment)
@@ -69,28 +85,28 @@ func TestPayAPI_InvalidFields(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			service := &fakePaymentService{}
-			router := newTestRouter(service)
+			svc := &fakePaymentService{}
+			router := newTestRouter(svc)
 			req := httptest.NewRequest(http.MethodPost, "/payment", strings.NewReader(tc.body))
 			req.Header.Set("Content-Type", "application/json")
 			rec := httptest.NewRecorder()
 			router.ServeHTTP(rec, req)
 			assert.Equal(t, http.StatusBadRequest, rec.Code)
-			assert.False(t, service.payCalled, "invalid request must not reach the service")
+			assert.False(t, svc.payCalled, "invalid request must not reach the service")
 		})
 	}
 }
 
 func TestPayAPI_ServiceError(t *testing.T) {
-	service := &fakePaymentService{err: errors.New("service failed")}
-	router := newTestRouter(service)
+	svc := &fakePaymentService{err: errors.New("service failed")}
+	router := newTestRouter(svc)
 	body := `{"userId":"` + uuid.New().String() + `","amount":1000}`
 	req := httptest.NewRequest(http.MethodPost, "/payment", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 	router.ServeHTTP(rec, req)
 	assert.Equal(t, http.StatusInternalServerError, rec.Code)
-	assert.True(t, service.payCalled)
+	assert.True(t, svc.payCalled)
 }
 
 func TestGetPaymentAPI(t *testing.T) {
@@ -105,6 +121,7 @@ func TestGetPaymentAPI(t *testing.T) {
 	}{
 		{"success", "/payment/" + id.String(), &fakePaymentService{payment: payment}, http.StatusOK, true},
 		{"invalid ID", "/payment/not-a-uuid", &fakePaymentService{}, http.StatusBadRequest, false},
+		{"not found", "/payment/" + id.String(), &fakePaymentService{err: pgx.ErrNoRows}, http.StatusNotFound, true},
 		{"service error", "/payment/" + id.String(), &fakePaymentService{err: errors.New("service failed")}, http.StatusInternalServerError, true},
 	}
 	for _, tc := range tests {
@@ -128,12 +145,12 @@ func TestPayAPI_Success(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	expectedPaymentID := uuid.New()
-	service := &fakePaymentService{
+	svc := &fakePaymentService{
 		paymentID: expectedPaymentID,
 	}
 
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
-	apiHandler := NewApiHandler(log, service)
+	apiHandler := NewApiHandler(log, svc)
 
 	router := gin.New()
 	router.POST("/payment", apiHandler.Pay)
@@ -156,15 +173,89 @@ func TestPayAPI_Success(t *testing.T) {
 	assert.Contains(t, rec.Body.String(), `"status":"PENDING"`)
 }
 
+func TestPayAPI_Idempotency(t *testing.T) {
+	existingID := uuid.New()
+
+	t.Run("duplicate request returns 200 OK with existing payment", func(t *testing.T) {
+		svc := &fakePaymentService{
+			payResult: &service.PayResult{
+				PaymentID: existingID,
+				Status:    db.PaymentStatusSuccess,
+				Created:   false,
+			},
+		}
+		router := newTestRouter(svc)
+
+		body := `{"userId":"` + uuid.New().String() + `","amount":1000}`
+		req := httptest.NewRequest(http.MethodPost, "/payment", strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Idempotency-Key", "order-123")
+
+		rec := httptest.NewRecorder()
+		router.ServeHTTP(rec, req)
+
+		assert.Equal(t, http.StatusOK, rec.Code)
+		assert.Equal(t, "order-123", svc.gotIdemKey)
+		assert.JSONEq(t, `{"paymentId":"`+existingID.String()+`","status":"SUCCESS"}`, rec.Body.String())
+	})
+
+	t.Run("idempotency key in JSON body is accepted", func(t *testing.T) {
+		newID := uuid.New()
+		svc := &fakePaymentService{paymentID: newID}
+		router := newTestRouter(svc)
+
+		body := `{"userId":"` + uuid.New().String() + `","amount":1000,"idempotencyKey":"body-key-1"}`
+		req := httptest.NewRequest(http.MethodPost, "/payment", strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+
+		rec := httptest.NewRecorder()
+		router.ServeHTTP(rec, req)
+
+		assert.Equal(t, http.StatusCreated, rec.Code)
+		assert.Equal(t, "body-key-1", svc.gotIdemKey)
+	})
+
+	t.Run("conflicting parameters for same key returns 409 Conflict", func(t *testing.T) {
+		svc := &fakePaymentService{err: service.ErrIdempotencyConflict}
+		router := newTestRouter(svc)
+
+		body := `{"userId":"` + uuid.New().String() + `","amount":2000}`
+		req := httptest.NewRequest(http.MethodPost, "/payment", strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Idempotency-Key", "order-123")
+
+		rec := httptest.NewRecorder()
+		router.ServeHTTP(rec, req)
+
+		assert.Equal(t, http.StatusConflict, rec.Code)
+	})
+
+	t.Run("mismatched header and body keys returns 400 BadRequest", func(t *testing.T) {
+		svc := &fakePaymentService{}
+		router := newTestRouter(svc)
+
+		body := `{"userId":"` + uuid.New().String() + `","amount":1000,"idempotencyKey":"key-1"}`
+		req := httptest.NewRequest(http.MethodPost, "/payment", strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Idempotency-Key", "key-2")
+
+		rec := httptest.NewRecorder()
+		router.ServeHTTP(rec, req)
+
+		assert.Equal(t, http.StatusBadRequest, rec.Code)
+		assert.False(t, svc.payCalled)
+	})
+}
+
 func TestPayAPI_InvalidJSON(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
-	service := &fakePaymentService{
+	svc := &fakePaymentService{
 		paymentID: uuid.New(),
 	}
 
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
-	apiHandler := NewApiHandler(log, service)
+	apiHandler := NewApiHandler(log, svc)
 
 	router := gin.New()
 	router.POST("/payment", apiHandler.Pay)

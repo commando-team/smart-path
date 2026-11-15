@@ -9,7 +9,28 @@ import (
 	"context"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgtype"
 )
+
+const claimPaymentForRouting = `-- name: ClaimPaymentForRouting :one
+UPDATE payments
+SET status = 'routing'
+WHERE id = $1 AND status = 'pending'
+RETURNING id, user_id, amount, status, idempotency_key
+`
+
+func (q *Queries) ClaimPaymentForRouting(ctx context.Context, id uuid.UUID) (Payment, error) {
+	row := q.db.QueryRow(ctx, claimPaymentForRouting, id)
+	var i Payment
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.Amount,
+		&i.Status,
+		&i.IdempotencyKey,
+	)
+	return i, err
+}
 
 const createChannel = `-- name: CreateChannel :one
 INSERT INTO channels (name, is_active, fee_percent, success_percent, latency_ms)
@@ -50,22 +71,35 @@ func (q *Queries) CreateChannel(ctx context.Context, arg CreateChannelParams) (C
 }
 
 const createPayment = `-- name: CreatePayment :one
-INSERT INTO payments (user_id, amount, status)
-VALUES ($1, $2, $3)
-RETURNING id
+INSERT INTO payments (user_id, amount, status, idempotency_key)
+VALUES ($1, $2, $3, $4)
+ON CONFLICT (idempotency_key) DO NOTHING
+RETURNING id, user_id, amount, status, idempotency_key
 `
 
 type CreatePaymentParams struct {
-	UserID uuid.UUID
-	Amount int64
-	Status PaymentStatus
+	UserID         uuid.UUID
+	Amount         int64
+	Status         PaymentStatus
+	IdempotencyKey pgtype.Text
 }
 
-func (q *Queries) CreatePayment(ctx context.Context, arg CreatePaymentParams) (uuid.UUID, error) {
-	row := q.db.QueryRow(ctx, createPayment, arg.UserID, arg.Amount, arg.Status)
-	var id uuid.UUID
-	err := row.Scan(&id)
-	return id, err
+func (q *Queries) CreatePayment(ctx context.Context, arg CreatePaymentParams) (Payment, error) {
+	row := q.db.QueryRow(ctx, createPayment,
+		arg.UserID,
+		arg.Amount,
+		arg.Status,
+		arg.IdempotencyKey,
+	)
+	var i Payment
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.Amount,
+		&i.Status,
+		&i.IdempotencyKey,
+	)
+	return i, err
 }
 
 const getChannelByID = `-- name: GetChannelByID :one
@@ -92,7 +126,7 @@ func (q *Queries) GetChannelByID(ctx context.Context, id uuid.UUID) (Channel, er
 }
 
 const getPayment = `-- name: GetPayment :one
-SELECT id, user_id, amount, status FROM payments
+SELECT id, user_id, amount, status, idempotency_key FROM payments
 WHERE id = $1 LIMIT 1
 `
 
@@ -104,6 +138,25 @@ func (q *Queries) GetPayment(ctx context.Context, id uuid.UUID) (Payment, error)
 		&i.UserID,
 		&i.Amount,
 		&i.Status,
+		&i.IdempotencyKey,
+	)
+	return i, err
+}
+
+const getPaymentByIdempotencyKey = `-- name: GetPaymentByIdempotencyKey :one
+SELECT id, user_id, amount, status, idempotency_key FROM payments
+WHERE idempotency_key = $1 LIMIT 1
+`
+
+func (q *Queries) GetPaymentByIdempotencyKey(ctx context.Context, idempotencyKey pgtype.Text) (Payment, error) {
+	row := q.db.QueryRow(ctx, getPaymentByIdempotencyKey, idempotencyKey)
+	var i Payment
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.Amount,
+		&i.Status,
+		&i.IdempotencyKey,
 	)
 	return i, err
 }
